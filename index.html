@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Portão Sítio" />
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="./icon.svg" />
+  <link rel="apple-touch-icon" href="./icon.svg" />
+  <title>🔔 Portão - Sítio 4 de Setembro</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --blue: #3b82f6;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .title-group h1 {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+    .title-group p {
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .conn-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .conn-pill.offline {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.35; }
+    }
+
+    /* Banner de Ativação do Modo Vigia (Tela Bloqueada) */
+    .vigia-banner {
+      background: linear-gradient(135deg, #1e3a8a, #1e293b);
+      border: 1px solid #3b82f6;
+      border-radius: 16px;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .vigia-banner.ativo {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+    .vigia-info h3 {
+      font-size: 14px;
+      font-weight: 800;
+      margin-bottom: 3px;
+    }
+    .vigia-info p {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.35;
+    }
+    .btn-vigia {
+      background: var(--amber);
+      color: #451a03;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      font-weight: 800;
+      font-size: 13px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .vigia-banner.ativo .btn-vigia {
+      background: var(--green);
+      color: #052e16;
+    }
+
+    /* Card de Status Principal */
+    .hero-card {
+      background: var(--card);
+      border: 2px solid var(--border);
+      border-radius: 20px;
+      padding: 22px 18px;
+      text-align: center;
+      margin-bottom: 16px;
+      transition: all 0.3s ease;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+    }
+    .hero-card.alerta-ativo {
+      background: linear-gradient(145deg, #451a1a, #1e293b);
+      border-color: var(--red);
+      animation: shakeBorder 1.2s infinite alternate;
+    }
+    .hero-card.atendido {
+      background: linear-gradient(145deg, #064e3b, #1e293b);
+      border-color: var(--green);
+    }
+    @keyframes shakeBorder {
+      from { box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
+      to   { box-shadow: 0 0 28px rgba(239, 68, 68, 0.85); }
+    }
+    .hero-icon {
+      font-size: 48px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .hero-status {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 6px;
+    }
+    .hero-sub {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    /* Botões principais */
+    .btn {
+      width: 100%;
+      border: none;
+      border-radius: 14px;
+      padding: 15px 18px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .btn-atender {
+      background: var(--green);
+      color: #052e16;
+      margin-bottom: 10px;
+      box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    }
+    .btn-teste {
+      background: rgba(59, 130, 246, 0.18);
+      color: #60a5fa;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      font-size: 14px;
+      padding: 12px;
+    }
+    .btn-instalar {
+      background: #8b5cf6;
+      color: #ffffff;
+      margin-bottom: 16px;
+      display: none;
+    }
+
+    /* Card genérico */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+    input[type="text"] {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 11px 13px;
+      border-radius: 10px;
+      font-size: 15px;
+    }
+    .btn-small {
+      background: var(--blue);
+      color: white;
+      border: none;
+      padding: 0 16px;
+      border-radius: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Lista de histórico */
+    .history-list {
+      list-style: none;
+      max-height: 290px;
+      overflow-y: auto;
+    }
+    .history-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 14px;
+    }
+    .history-item:last-child {
+      border-bottom: none;
+    }
+    .history-time {
+      font-size: 12px;
+      color: var(--muted);
+      white-space: nowrap;
+      margin-top: 2px;
+    }
+    .history-text {
+      flex: 1;
+      line-height: 1.35;
+    }
+    .install-tip {
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="title-group">
+        <h1>🔔 Portão do Sítio</h1>
+        <p>Sítio 4 de Setembro • Alerta 24h</p>
+      </div>
+      <div id="connBadge" class="conn-pill">
+        <span class="dot"></span>
+        <span id="connText">Conectado</span>
+      </div>
+    </header>
+
+    <!-- Botão automático de instalar App no Android -->
+    <button id="btnInstalarApp" class="btn btn-instalar" onclick="instalarPWA()">
+      📲 Instalar Aplicativo "Portão Sítio" no Celular
+    </button>
+
+    <!-- Ativador de Alarme em 2º Plano (Tela Bloqueada) -->
+    <div id="vigiaBanner" class="vigia-banner">
+      <div class="vigia-info">
+        <h3 id="vigiaTitulo">🔇 Alarme de Bolso Desativado</h3>
+        <p id="vigiaDesc">Toque ao lado para ativar o som de campainha mesmo com a tela bloqueada.</p>
+      </div>
+      <button id="btnVigia" class="btn-vigia" onclick="ativarModoVigia24h()">
+        🔔 Ativar Som 24h
+      </button>
+    </div>
+
+    <!-- Painel Principal -->
+    <div id="heroCard" class="hero-card">
+      <span id="heroIcon" class="hero-icon">🏡</span>
+      <div id="heroStatus" class="hero-status">Portão Tranquilo</div>
+      <div id="heroSub" class="hero-sub">Monitorando presença no portão...</div>
+
+      <button class="btn btn-atender" onclick="avisarQueVouAtender()">
+        🏃 Já estou indo atender!
+      </button>
+
+      <button class="btn btn-teste" onclick="dispararSimulacaoPortao()">
+        🔔 Testar Campainha em Todos os Celulares
+      </button>
+    </div>
+
+    <!-- Identificação do Morador -->
+    <div class="card">
+      <h2>👤 Seu Nome (para avisar quem foi atender)</h2>
+      <div class="input-row">
+        <input type="text" id="meuNomeInput" placeholder="Ex: Kairo, Mara..." />
+        <button class="btn-small" onclick="salvarNome()">Salvar</button>
+      </div>
+    </div>
+
+    <!-- Histórico de Chegadas e Avisos -->
+    <div class="card">
+      <h2>
+        <span>🕒 Histórico do Portão (Últimas 24h)</span>
+        <button onclick="tocarSomCampainha()" style="background:none;border:none;color:#60a5fa;font-size:12px;cursor:pointer;">🔊 Testar Toque</button>
+      </h2>
+      <ul id="historyList" class="history-list">
+        <li class="history-item"><span class="history-text" style="color:var(--muted);">Carregando histórico...</span></li>
+      </ul>
+    </div>
+
+    <!-- Como colocar o ícone na tela inicial -->
+    <div class="card">
+      <h2>📲 Como deixar na Tela Inicial do Celular</h2>
+      <div class="install-tip">
+        • <b>No Android (Chrome):</b> Toque nos 3 pontinhos no canto superior direito e escolha <b>"Instalar aplicativo"</b> (ou <b>"Adicionar à tela inicial"</b>).<br>
+        • <b>No iPhone (Safari):</b> Toque no botão <b>Compartilhar</b> (quadradinho com seta para cima na barra inferior) e escolha <b>"Adicionar à Tela de Início"</b>.
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TOPICO_NUVEM = "sitio4setembro_portao_95394";
+    const URL_NUVEM    = "https://ntfy.sh/" + TOPICO_NUVEM;
+
+    let audioCtx = null;
+    let silentAudio = null;
+    let swRegistration = null;
+    let deferredInstallPrompt = null;
+    let eventSource = null;
+
+    // 1. Registra o Service Worker para funcionar como App Nativo (PWA)
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").then(reg => {
+        swRegistration = reg;
+      }).catch(() => {});
+    }
+
+    // 2. Captura evento de instalação automática no Android
+    window.addEventListener("beforeinstallprompt", (e) => {
+      e.preventDefault();
+      deferredInstallPrompt = e;
+      document.getElementById("btnInstalarApp").style.display = "flex";
+    });
+
+    async function instalarPWA() {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      document.getElementById("btnInstalarApp").style.display = "none";
+    }
+
+    // 3. Carrega o nome do morador
+    const inputNome = document.getElementById("meuNomeInput");
+    inputNome.value = localStorage.getItem("nome_morador_sitio") || "Kairo";
+
+    function salvarNome() {
+      const val = inputNome.value.trim() || "Morador";
+      localStorage.setItem("nome_morador_sitio", val);
+      alert("Nome salvo como: " + val);
+    }
+
+    // 4. Modo Vigia 24h (Mantém o App acordado em segundo plano no Android e iPhone mesmo com a tela bloqueada!)
+    function gerarWavSilenciosoDataUri() {
+      // Gera um mini arquivo WAV silencioso de 1 segundo em memória
+      const sampleRate = 8000;
+      const numSamples = sampleRate;
+      const buffer = new ArrayBuffer(44 + numSamples);
+      const view = new DataView(buffer);
+      const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples, true);
+      writeStr(8, "WAVEfmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate, true);
+      view.setUint16(32, 1, true);
+      view.setUint16(34, 8, true);
+      writeStr(36, "data");
+      view.setUint32(40, numSamples, true);
+      for (let i = 0; i < numSamples; i++) view.setUint8(44 + i, 128);
+
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      return "data:audio/wav;base64," + btoa(binary);
+    }
+
+    async function ativarModoVigia24h() {
+      // Destrava o sintetizador da campainha
+      tocarSomCampainha();
+
+      // Pede permissão de notificação na tela bloqueada
+      if ("Notification" in window && Notification.permission !== "granted") {
+        try {
+          await Notification.requestPermission();
+        } catch (e) {}
+      }
+
+      // Inicia áudio silencioso contínuo para o Android/iPhone não adormecer o App quando bloquear a tela
+      if (!silentAudio) {
+        silentAudio = new Audio(gerarWavSilenciosoDataUri());
+        silentAudio.loop = true;
+        silentAudio.volume = 0.01;
+      }
+      try {
+        await silentAudio.play();
+      } catch (e) {}
+
+      if ("mediaSession" in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: "Portão Sítio 4 de Setembro",
+          artist: "Monitoramento Ativo 24h",
+          album: "Campainha do Portão"
+        });
+      }
+
+      // Atualiza visual do banner
+      const banner = document.getElementById("vigiaBanner");
+      banner.className = "vigia-banner ativo";
+      document.getElementById("vigiaTitulo").textContent = "✅ Alarme 24h Ativo neste Celular";
+      document.getElementById("vigiaDesc").textContent = "Pode bloquear a tela: a campainha vai tocar quando alguém chegar no portão.";
+      document.getElementById("btnVigia").textContent = "🔊 Ativo";
+    }
+
+    // 5. Som Forte de Campainha ("Ding-Dong!")
+    function tocarSomCampainha() {
+      try {
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
+        }
+        const agora = audioCtx.currentTime;
+        tocarNota(784, agora, 0.45);
+        tocarNota(659.25, agora + 0.42, 0.85);
+        tocarNota(784, agora + 1.4, 0.45);
+        tocarNota(659.25, agora + 1.82, 0.95);
+
+        if (navigator.vibrate) {
+          navigator.vibrate([500, 150, 500, 150, 700]);
+        }
+      } catch (e) {}
+    }
+
+    function tocarNota(freq, inicio, duracao) {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(freq, inicio);
+
+      gain.gain.setValueAtTime(0.001, inicio);
+      gain.gain.exponentialRampToValueAtTime(0.95, inicio + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, inicio + duracao);
+
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start(inicio);
+      osc.stop(inicio + duracao);
+    }
+
+    // 6. Dispara Notificação Nativa na Tela do Celular
+    function dispararNotificacaoSistema(titulo, corpo) {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      try {
+        if (swRegistration && swRegistration.showNotification) {
+          swRegistration.showNotification(titulo, {
+            body: corpo,
+            icon: "./icon.svg",
+            badge: "./icon.svg",
+            vibrate: [500, 150, 500, 150, 700],
+            requireInteraction: true
+          });
+        } else {
+          new Notification(titulo, { body: corpo });
+        }
+      } catch (e) {
+        try { new Notification(titulo, { body: corpo }); } catch (err) {}
+      }
+    }
+
+    function formatarHora(timestampSeg) {
+      const d = new Date(timestampSeg * 1000);
+      return d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) +
+             " (" + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) + ")";
+    }
+
+    function atualizarPainelPrincipal(msg, timeSeg) {
+      const card   = document.getElementById("heroCard");
+      const icon   = document.getElementById("heroIcon");
+      const status = document.getElementById("heroStatus");
+      const sub    = document.getElementById("heroSub");
+
+      if (msg.includes("indo atender") || msg.includes("atendeu")) {
+        card.className = "hero-card atendido";
+        icon.textContent = "✅";
+        status.textContent = "Portão Sendo Atendido";
+        sub.textContent = msg + " • " + formatarHora(timeSeg);
+        dispararNotificacaoSistema("✅ Portão Sendo Atendido", msg);
+      } else {
+        card.className = "hero-card alerta-ativo";
+        icon.textContent = "🚨";
+        status.textContent = "PESSOA NO PORTÃO!";
+        sub.textContent = msg + " • " + formatarHora(timeSeg);
+        tocarSomCampainha();
+        dispararNotificacaoSistema("🚨 PESSOA NO PORTÃO!", msg);
+      }
+    }
+
+    function adicionarItemHistorico(msg, timeSeg, noTopo = true) {
+      const ul = document.getElementById("historyList");
+      if (ul.children.length === 1 && ul.children[0].textContent.includes("Carregando")) {
+        ul.innerHTML = "";
+      }
+      const li = document.createElement("li");
+      li.className = "history-item";
+      li.innerHTML = `
+        <span class="history-time">${formatarHora(timeSeg)}</span>
+        <span class="history-text">${msg}</span>
+      `;
+      if (noTopo && ul.firstChild) {
+        ul.insertBefore(li, ul.firstChild);
+      } else {
+        ul.appendChild(li);
+      }
+    }
+
+    async function avisarQueVouAtender() {
+      const nome = (document.getElementById("meuNomeInput").value || "Alguém").trim();
+      localStorage.setItem("nome_morador_sitio", nome);
+      const texto = `✅ ${nome} já está indo atender o portão!`;
+
+      await fetch(URL_NUVEM, {
+        method: "POST",
+        headers: {
+          "Title": "Portao Sitio - Atendido",
+          "Priority": "default",
+          "Tags": "white_check_mark"
+        },
+        body: texto
+      });
+    }
+
+    async function dispararSimulacaoPortao() {
+      tocarSomCampainha();
+      const texto = "🔔 Alguém acabou de chegar perto do portão do sítio!";
+      await fetch(URL_NUVEM, {
+        method: "POST",
+        headers: {
+          "Title": "ALERTA: Pessoa no Portao!",
+          "Priority": "urgent",
+          "Tags": "rotating_light,bell"
+        },
+        body: texto
+      });
+    }
+
+    function iniciarConexaoTempoReal() {
+      const badge = document.getElementById("connBadge");
+      const text  = document.getElementById("connText");
+
+      fetch(URL_NUVEM + "/json?poll=1&since=24h")
+        .then(r => r.text())
+        .then(linhas => {
+          const ul = document.getElementById("historyList");
+          ul.innerHTML = "";
+          const arr = linhas.trim().split("\n").filter(Boolean);
+          if (arr.length === 0) {
+            ul.innerHTML = `<li class="history-item"><span class="history-text" style="color:var(--muted);">Nenhum movimento registrado hoje.</span></li>`;
+          } else {
+            arr.forEach(l => {
+              try {
+                const obj = JSON.parse(l);
+                if (obj.event === "message") {
+                  adicionarItemHistorico(obj.message, obj.time, true);
+                }
+              } catch (e) {}
+            });
+          }
+        })
+        .catch(() => {});
+
+      if (eventSource) eventSource.close();
+      eventSource = new EventSource(URL_NUVEM + "/sse");
+
+      eventSource.onopen = () => {
+        badge.className = "conn-pill";
+        text.textContent = "Online 24h";
+      };
+
+      eventSource.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          if (data.event === "message") {
+            adicionarItemHistorico(data.message, data.time, true);
+            atualizarPainelPrincipal(data.message, data.time);
+          }
+        } catch (e) {}
+      };
+
+      eventSource.onerror = () => {
+        badge.className = "conn-pill offline";
+        text.textContent = "Reconectando...";
+      };
+    }
+
+    iniciarConexaoTempoReal();
+  </script>
+</body>
+</html>
