@@ -290,14 +290,14 @@
       📲 Instalar Aplicativo "Portão Sítio" no Celular
     </button>
 
-    <!-- Ativador de Alarme em 2º Plano (Tela Bloqueada) -->
+    <!-- Controle Inteligente: Só Tocar no Sítio (Wi-Fi ou 5G até 600m) + Respeita Silencioso -->
     <div id="vigiaBanner" class="vigia-banner">
       <div class="vigia-info">
-        <h3 id="vigiaTitulo">🔇 Alarme de Bolso Desativado</h3>
-        <p id="vigiaDesc">Toque ao lado para ativar o som de campainha mesmo com a tela bloqueada.</p>
+        <h3 id="vigiaTitulo">📍 Modo Inteligente: Só no Sítio (Wi-Fi ou 5G)</h3>
+        <p id="vigiaDesc">Toque ao lado estando no sítio para gravar a área (600m). Se você sair para a cidade ou mutar o celular, ele não toca!</p>
       </div>
-      <button id="btnVigia" class="btn-vigia" onclick="ativarModoVigia24h()">
-        🔔 Ativar Som 24h
+      <button id="btnVigia" class="btn-vigia" onclick="configurarLocalDoSitio()">
+        📍 Gravar Sítio
       </button>
     </div>
 
@@ -351,72 +351,16 @@
     const URL_NUVEM    = "https://ntfy.sh/" + TOPICO_NUVEM;
 
     let audioCtx = null;
-    let silentAudio = null;
-    let campainhaMediaAudio = null;
     let swRegistration = null;
     let deferredInstallPrompt = null;
     let eventSource = null;
 
-    // Gera um arquivo WAV real (16-bit PCM) com o som alto de Campainha "Ding-Dong! Ding-Dong!"
-    // Por ser tocado via elemento <audio> de Mídia (como um vídeo/música), ele TOCA ALTO mesmo
-    // quando o celular (Android ou iPhone) está no modo Silencioso/Vibrar para notificações!
-    function gerarWavCampainhaForteDataUri() {
-      const sampleRate = 16000;
-      const durationSec = 2.6;
-      const numSamples = Math.floor(sampleRate * durationSec);
-      const buffer = new ArrayBuffer(44 + numSamples * 2);
-      const view = new DataView(buffer);
-      const writeStr = (offset, str) => {
-        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-      };
-      writeStr(0, "RIFF");
-      view.setUint32(4, 36 + numSamples * 2, true);
-      writeStr(8, "WAVEfmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true); // PCM
-      view.setUint16(22, 1, true); // Mono
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate * 2, true);
-      view.setUint16(32, 2, true);
-      view.setUint16(34, 16, true); // 16-bit
-      writeStr(36, "data");
-      view.setUint32(40, numSamples * 2, true);
-
-      // 4 notas: Ding (0.0s), Dong (0.45s), Ding (1.3s), Dong (1.75s)
-      const notas = [
-        { inicio: 0.00, dur: 0.45, freq: 784.0 },
-        { inicio: 0.42, dur: 0.80, freq: 659.25 },
-        { inicio: 1.30, dur: 0.45, freq: 784.0 },
-        { inicio: 1.72, dur: 0.85, freq: 659.25 }
-      ];
-
-      for (let i = 0; i < numSamples; i++) {
-        const t = i / sampleRate;
-        let sample = 0;
-        for (const n of notas) {
-          if (t >= n.inicio && t < n.inicio + n.dur) {
-            const dt = t - n.inicio;
-            const env = Math.exp(-dt * 3.5);
-            // Fundamental + harmônicos para som encorpado e alto de campainha
-            sample += env * (
-              0.65 * Math.sin(2 * Math.PI * n.freq * dt) +
-              0.25 * Math.sin(2 * Math.PI * (n.freq * 2) * dt) +
-              0.10 * Math.sin(2 * Math.PI * (n.freq * 3) * dt)
-            );
-          }
-        }
-        sample = Math.max(-1, Math.min(1, sample));
-        view.setInt16(44 + i * 2, Math.floor(sample * 32000), true);
-      }
-
-      let binary = "";
-      const bytes = new Uint8Array(buffer);
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.byteLength; i += chunkSize) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
-      }
-      return "data:audio/wav;base64," + btoa(binary);
-    }
+    // Cerca Virtual do Sítio (600 metros de raio - funciona mesmo no 5G andando pelo sítio!)
+    const RAIO_MAXIMO_SITIO_METROS = 600;
+    let sitioLat = parseFloat(localStorage.getItem("sitio_lat") || "0");
+    let sitioLon = parseFloat(localStorage.getItem("sitio_lon") || "0");
+    let ultimaDistanciaMetros = null;
+    let dentroDoSitioAgora = true;
 
     // 1. Registra o Service Worker para funcionar como App Nativo (PWA)
     if ("serviceWorker" in navigator) {
@@ -450,86 +394,106 @@
       alert("Nome salvo como: " + val);
     }
 
-    // 4. Modo Vigia 24h (Mantém o App acordado em segundo plano no Android e iPhone mesmo com a tela bloqueada!)
-    function gerarWavSilenciosoDataUri() {
-      // Gera um mini arquivo WAV silencioso de 1 segundo em memória
-      const sampleRate = 8000;
-      const numSamples = sampleRate;
-      const buffer = new ArrayBuffer(44 + numSamples);
-      const view = new DataView(buffer);
-      const writeStr = (offset, str) => {
-        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-      };
-      writeStr(0, "RIFF");
-      view.setUint32(4, 36 + numSamples, true);
-      writeStr(8, "WAVEfmt ");
-      view.setUint32(16, 16, true);
-      view.setUint16(20, 1, true);
-      view.setUint16(22, 1, true);
-      view.setUint32(24, sampleRate, true);
-      view.setUint32(28, sampleRate, true);
-      view.setUint16(32, 1, true);
-      view.setUint16(34, 8, true);
-      writeStr(36, "data");
-      view.setUint32(40, numSamples, true);
-      for (let i = 0; i < numSamples; i++) view.setUint8(44 + i, 128);
-
-      let binary = "";
-      const bytes = new Uint8Array(buffer);
-      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-      return "data:audio/wav;base64," + btoa(binary);
+    // 4. Cálculo de Distância GPS (Fórmula de Haversine em metros)
+    function calcularDistanciaMetros(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const toRad = (g) => (g * Math.PI) / 180;
+      const dLat = toRad(lat2 - lat1);
+      const dLon = toRad(lon2 - lon1);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     }
 
-    async function ativarModoVigia24h() {
-      // Destrava o sintetizador da campainha
-      tocarSomCampainha();
-
-      // Pede permissão de notificação na tela bloqueada
-      if ("Notification" in window && Notification.permission !== "granted") {
-        try {
-          await Notification.requestPermission();
-        } catch (e) {}
-      }
-
-      // Inicia áudio silencioso contínuo para o Android/iPhone não adormecer o App quando bloquear a tela
-      if (!silentAudio) {
-        silentAudio = new Audio(gerarWavSilenciosoDataUri());
-        silentAudio.loop = true;
-        silentAudio.volume = 0.01;
-      }
-      try {
-        await silentAudio.play();
-      } catch (e) {}
-
-      if ("mediaSession" in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-          title: "Portão Sítio 4 de Setembro",
-          artist: "Monitoramento Ativo 24h",
-          album: "Campainha do Portão"
-        });
-      }
-
-      // Atualiza visual do banner
+    function atualizarStatusGeofenceUI() {
       const banner = document.getElementById("vigiaBanner");
-      banner.className = "vigia-banner ativo";
-      document.getElementById("vigiaTitulo").textContent = "✅ Alarme 24h Ativo neste Celular";
-      document.getElementById("vigiaDesc").textContent = "Pode bloquear a tela: a campainha vai tocar quando alguém chegar no portão.";
-      document.getElementById("btnVigia").textContent = "🔊 Ativo";
+      const titulo = document.getElementById("vigiaTitulo");
+      const desc   = document.getElementById("vigiaDesc");
+      const btn    = document.getElementById("btnVigia");
+
+      if (!sitioLat || !sitioLon) {
+        return;
+      }
+
+      if (dentroDoSitioAgora) {
+        banner.className = "vigia-banner ativo";
+        const distTxt = (ultimaDistanciaMetros !== null) ? ` (${Math.round(ultimaDistanciaMetros)}m da sede)` : "";
+        titulo.textContent = "🏡 Você está no Sítio" + distTxt;
+        desc.textContent = "Alertas ativos no Wi-Fi e no 5G (respeita se o celular estiver no Silencioso).";
+        btn.textContent = "📍 Atualizar";
+      } else {
+        banner.className = "vigia-banner";
+        const kmTxt = (ultimaDistanciaMetros !== null) ? ` (${(ultimaDistanciaMetros / 1000).toFixed(1)} km)` : "";
+        titulo.textContent = "🚗 Fora do Sítio" + kmTxt + " • Silenciado";
+        desc.textContent = "Você saiu da área de 600m do sítio. O alarme não vai tocar até você voltar.";
+        btn.textContent = "📍 Recalibrar";
+      }
     }
 
-    // 5. Som Forte de Campainha ("Ding-Dong!") usando Canal de Mídia (fura o modo Silencioso de notificações!)
+    function iniciarMonitoramentoGPS() {
+      if (!("geolocation" in navigator) || !sitioLat || !sitioLon) return;
+      navigator.geolocation.watchPosition(
+        (pos) => {
+          ultimaDistanciaMetros = calcularDistanciaMetros(
+            sitioLat,
+            sitioLon,
+            pos.coords.latitude,
+            pos.coords.longitude
+          );
+          dentroDoSitioAgora = (ultimaDistanciaMetros <= RAIO_MAXIMO_SITIO_METROS);
+          atualizarStatusGeofenceUI();
+        },
+        () => {},
+        { enableHighAccuracy: false, maximumAge: 60000, timeout: 15000 }
+      );
+    }
+
+    async function configurarLocalDoSitio() {
+      if ("Notification" in window && Notification.permission !== "granted") {
+        try { await Notification.requestPermission(); } catch (e) {}
+      }
+
+      if (!("geolocation" in navigator)) {
+        alert("Seu navegador não suporta localização GPS.");
+        return;
+      }
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          sitioLat = pos.coords.latitude;
+          sitioLon = pos.coords.longitude;
+          localStorage.setItem("sitio_lat", String(sitioLat));
+          localStorage.setItem("sitio_lon", String(sitioLon));
+          ultimaDistanciaMetros = 0;
+          dentroDoSitioAgora = true;
+          atualizarStatusGeofenceUI();
+          iniciarMonitoramentoGPS();
+          tocarSomCampainha();
+        },
+        () => {
+          alert("Permita o acesso à localização para o App saber quando você está no sítio (mesmo no 5G) ou fora de casa.");
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
+    // 5. Som de Campainha que RESPEITA 100% o Modo Silencioso/Vibrar do celular!
+    // (Usa AudioContext Ambient: se a pessoa mutou o celular numa palestra, fica 100% mudo!)
     function tocarSomCampainha() {
       try {
-        if (!campainhaMediaAudio) {
-          campainhaMediaAudio = new Audio(gerarWavCampainhaForteDataUri());
-          campainhaMediaAudio.volume = 1.0;
+        if (!audioCtx) {
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
-        campainhaMediaAudio.currentTime = 0;
-        campainhaMediaAudio.play().catch(() => {});
-
-        if (navigator.vibrate) {
-          navigator.vibrate([500, 150, 500, 150, 700]);
+        if (audioCtx.state === "suspended") {
+          audioCtx.resume();
         }
+        const agora = audioCtx.currentTime;
+        tocarNota(784, agora, 0.45);
+        tocarNota(659.25, agora + 0.42, 0.85);
+        tocarNota(784, agora + 1.4, 0.45);
+        tocarNota(659.25, agora + 1.82, 0.95);
       } catch (e) {}
     }
 
@@ -549,8 +513,9 @@
       osc.stop(inicio + duracao);
     }
 
-    // 6. Dispara Notificação Nativa na Tela do Celular
+    // 6. Dispara Notificação Nativa na Tela do Celular (Respeita Silencioso / Não Perturbe)
     function dispararNotificacaoSistema(titulo, corpo) {
+      if (!dentroDoSitioAgora) return; // Não incomoda se a pessoa estiver fora do sítio!
       if (!("Notification" in window) || Notification.permission !== "granted") return;
       try {
         if (swRegistration && swRegistration.showNotification) {
@@ -558,8 +523,7 @@
             body: corpo,
             icon: "./icon.svg",
             badge: "./icon.svg",
-            vibrate: [500, 150, 500, 150, 700],
-            requireInteraction: true
+            requireInteraction: false
           });
         } else {
           new Notification(titulo, { body: corpo });
@@ -592,8 +556,10 @@
         icon.textContent = "🚨";
         status.textContent = "PESSOA NO PORTÃO!";
         sub.textContent = msg + " • " + formatarHora(timeSeg);
-        tocarSomCampainha();
-        dispararNotificacaoSistema("🚨 PESSOA NO PORTÃO!", msg);
+        if (dentroDoSitioAgora) {
+          tocarSomCampainha();
+          dispararNotificacaoSistema("🚨 PESSOA NO PORTÃO!", msg);
+        }
       }
     }
 
@@ -694,6 +660,10 @@
       };
     }
 
+    if (sitioLat && sitioLon) {
+      atualizarStatusGeofenceUI();
+      iniciarMonitoramentoGPS();
+    }
     iniciarConexaoTempoReal();
   </script>
 </body>
