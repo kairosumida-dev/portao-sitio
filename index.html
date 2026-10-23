@@ -351,6 +351,8 @@
     const URL_NUVEM    = "https://ntfy.sh/" + TOPICO_NUVEM;
 
     let audioCtx = null;
+    let silentAudio = null;
+    let campainhaMediaAudio = null;
     let swRegistration = null;
     let deferredInstallPrompt = null;
     let eventSource = null;
@@ -361,6 +363,93 @@
     let sitioLon = parseFloat(localStorage.getItem("sitio_lon") || "0");
     let ultimaDistanciaMetros = null;
     let dentroDoSitioAgora = true;
+
+    // Gera WAV silencioso de 1s para manter o App acordado no bolso enquanto estiver no Sítio
+    function gerarWavSilenciosoDataUri() {
+      const sampleRate = 8000;
+      const numSamples = sampleRate;
+      const buffer = new ArrayBuffer(44 + numSamples);
+      const view = new DataView(buffer);
+      const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples, true);
+      writeStr(8, "WAVEfmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate, true);
+      view.setUint16(32, 1, true);
+      view.setUint16(34, 8, true);
+      writeStr(36, "data");
+      view.setUint32(40, numSamples, true);
+      for (let i = 0; i < numSamples; i++) view.setUint8(44 + i, 128);
+
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+      return "data:audio/wav;base64," + btoa(binary);
+    }
+
+    // Gera WAV real (16-bit PCM) da Campainha "Ding-Dong!" para tocar no Canal de Mídia
+    // (fura o modo silencioso quando a pessoa está DENTRO dos 600m do sítio!)
+    function gerarWavCampainhaForteDataUri() {
+      const sampleRate = 16000;
+      const durationSec = 2.6;
+      const numSamples = Math.floor(sampleRate * durationSec);
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+      const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeStr(8, "WAVEfmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true);
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * 2, true);
+
+      const notas = [
+        { inicio: 0.00, dur: 0.45, freq: 784.0 },
+        { inicio: 0.42, dur: 0.80, freq: 659.25 },
+        { inicio: 1.30, dur: 0.45, freq: 784.0 },
+        { inicio: 1.72, dur: 0.85, freq: 659.25 }
+      ];
+
+      for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        let sample = 0;
+        for (const n of notas) {
+          if (t >= n.inicio && t < n.inicio + n.dur) {
+            const dt = t - n.inicio;
+            const env = Math.exp(-dt * 3.5);
+            sample += env * (
+              0.65 * Math.sin(2 * Math.PI * n.freq * dt) +
+              0.25 * Math.sin(2 * Math.PI * (n.freq * 2) * dt) +
+              0.10 * Math.sin(2 * Math.PI * (n.freq * 3) * dt)
+            );
+          }
+        }
+        sample = Math.max(-1, Math.min(1, sample));
+        view.setInt16(44 + i * 2, Math.floor(sample * 32000), true);
+      }
+
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      return "data:audio/wav;base64," + btoa(binary);
+    }
 
     // 1. Registra o Service Worker para funcionar como App Nativo (PWA)
     if ("serviceWorker" in navigator) {
@@ -420,15 +509,21 @@
       if (dentroDoSitioAgora) {
         banner.className = "vigia-banner ativo";
         const distTxt = (ultimaDistanciaMetros !== null) ? ` (${Math.round(ultimaDistanciaMetros)}m da sede)` : "";
-        titulo.textContent = "🏡 Você está no Sítio" + distTxt;
-        desc.textContent = "Alertas ativos no Wi-Fi e no 5G (respeita se o celular estiver no Silencioso).";
+        titulo.textContent = "🏡 No Sítio" + distTxt + " • Toque Forte Ativo";
+        desc.textContent = "Dentro de 600m: a campainha toca alto mesmo se você esquecer o celular no Silencioso!";
         btn.textContent = "📍 Atualizar";
+        if (silentAudio && silentAudio.paused) {
+          silentAudio.play().catch(() => {});
+        }
       } else {
         banner.className = "vigia-banner";
         const kmTxt = (ultimaDistanciaMetros !== null) ? ` (${(ultimaDistanciaMetros / 1000).toFixed(1)} km)` : "";
-        titulo.textContent = "🚗 Fora do Sítio" + kmTxt + " • Silenciado";
-        desc.textContent = "Você saiu da área de 600m do sítio. O alarme não vai tocar até você voltar.";
+        titulo.textContent = "🚗 Fora do Sítio" + kmTxt + " • Modo Discreto";
+        desc.textContent = "Fora de 600m: respeita 100% o modo Silencioso/Vibrar do seu celular.";
         btn.textContent = "📍 Recalibrar";
+        if (silentAudio && !silentAudio.paused) {
+          silentAudio.pause();
+        }
       }
     }
 
@@ -451,6 +546,19 @@
     }
 
     async function configurarLocalDoSitio() {
+      // Destrava o áudio de Mídia no clique do usuário
+      if (!silentAudio) {
+        silentAudio = new Audio(gerarWavSilenciosoDataUri());
+        silentAudio.loop = true;
+        silentAudio.volume = 0.01;
+      }
+      silentAudio.play().catch(() => {});
+
+      if (!campainhaMediaAudio) {
+        campainhaMediaAudio = new Audio(gerarWavCampainhaForteDataUri());
+        campainhaMediaAudio.volume = 1.0;
+      }
+
       if ("Notification" in window && Notification.permission !== "granted") {
         try { await Notification.requestPermission(); } catch (e) {}
       }
@@ -473,27 +581,40 @@
           tocarSomCampainha();
         },
         () => {
-          alert("Permita o acesso à localização para o App saber quando você está no sítio (mesmo no 5G) ou fora de casa.");
+          alert("Permita o acesso à localização para o App saber quando você está dentro dos 600m do sítio (mesmo no 5G) ou fora de casa.");
         },
         { enableHighAccuracy: true, timeout: 10000 }
       );
     }
 
-    // 5. Som de Campainha que RESPEITA 100% o Modo Silencioso/Vibrar do celular!
-    // (Usa AudioContext Ambient: se a pessoa mutou o celular numa palestra, fica 100% mudo!)
+    // 5. Lógica Dupla de Som da Campainha:
+    // - DENTRO de 600m do Sítio: Usa Canal de Mídia WAV (FURA o modo Silencioso para você nunca perder entrega/visita em casa!)
+    // - FORA de 600m do Sítio: Usa WebAudio Ambient (RESPEITA o modo Silencioso se você estiver numa palestra/reunião!)
     function tocarSomCampainha() {
       try {
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (dentroDoSitioAgora) {
+          // DENTRO DO SÍTIO -> Toca no canal de Mídia (fura o silencioso!)
+          if (!campainhaMediaAudio) {
+            campainhaMediaAudio = new Audio(gerarWavCampainhaForteDataUri());
+            campainhaMediaAudio.volume = 1.0;
+          }
+          campainhaMediaAudio.currentTime = 0;
+          campainhaMediaAudio.play().catch(() => {});
+          if (navigator.vibrate) {
+            navigator.vibrate([500, 150, 500, 150, 700]);
+          }
+        } else {
+          // FORA DO SÍTIO -> Toca apenas no canal Ambiente (respeita 100% se o celular estiver no silencioso!)
+          if (!audioCtx) {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          }
+          if (audioCtx.state === "suspended") {
+            audioCtx.resume();
+          }
+          const agora = audioCtx.currentTime;
+          tocarNota(784, agora, 0.45);
+          tocarNota(659.25, agora + 0.42, 0.85);
         }
-        if (audioCtx.state === "suspended") {
-          audioCtx.resume();
-        }
-        const agora = audioCtx.currentTime;
-        tocarNota(784, agora, 0.45);
-        tocarNota(659.25, agora + 0.42, 0.85);
-        tocarNota(784, agora + 1.4, 0.45);
-        tocarNota(659.25, agora + 1.82, 0.95);
       } catch (e) {}
     }
 
@@ -513,9 +634,8 @@
       osc.stop(inicio + duracao);
     }
 
-    // 6. Dispara Notificação Nativa na Tela do Celular (Respeita Silencioso / Não Perturbe)
+    // 6. Dispara Notificação Nativa na Tela do Celular
     function dispararNotificacaoSistema(titulo, corpo) {
-      if (!dentroDoSitioAgora) return; // Não incomoda se a pessoa estiver fora do sítio!
       if (!("Notification" in window) || Notification.permission !== "granted") return;
       try {
         if (swRegistration && swRegistration.showNotification) {
@@ -523,7 +643,7 @@
             body: corpo,
             icon: "./icon.svg",
             badge: "./icon.svg",
-            requireInteraction: false
+            requireInteraction: dentroDoSitioAgora
           });
         } else {
           new Notification(titulo, { body: corpo });
@@ -556,10 +676,8 @@
         icon.textContent = "🚨";
         status.textContent = "PESSOA NO PORTÃO!";
         sub.textContent = msg + " • " + formatarHora(timeSeg);
-        if (dentroDoSitioAgora) {
-          tocarSomCampainha();
-          dispararNotificacaoSistema("🚨 PESSOA NO PORTÃO!", msg);
-        }
+        tocarSomCampainha();
+        dispararNotificacaoSistema("🚨 PESSOA NO PORTÃO!", msg);
       }
     }
 
