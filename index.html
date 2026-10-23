@@ -352,9 +352,71 @@
 
     let audioCtx = null;
     let silentAudio = null;
+    let campainhaMediaAudio = null;
     let swRegistration = null;
     let deferredInstallPrompt = null;
     let eventSource = null;
+
+    // Gera um arquivo WAV real (16-bit PCM) com o som alto de Campainha "Ding-Dong! Ding-Dong!"
+    // Por ser tocado via elemento <audio> de Mídia (como um vídeo/música), ele TOCA ALTO mesmo
+    // quando o celular (Android ou iPhone) está no modo Silencioso/Vibrar para notificações!
+    function gerarWavCampainhaForteDataUri() {
+      const sampleRate = 16000;
+      const durationSec = 2.6;
+      const numSamples = Math.floor(sampleRate * durationSec);
+      const buffer = new ArrayBuffer(44 + numSamples * 2);
+      const view = new DataView(buffer);
+      const writeStr = (offset, str) => {
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
+      };
+      writeStr(0, "RIFF");
+      view.setUint32(4, 36 + numSamples * 2, true);
+      writeStr(8, "WAVEfmt ");
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); // PCM
+      view.setUint16(22, 1, true); // Mono
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * 2, true);
+      view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true); // 16-bit
+      writeStr(36, "data");
+      view.setUint32(40, numSamples * 2, true);
+
+      // 4 notas: Ding (0.0s), Dong (0.45s), Ding (1.3s), Dong (1.75s)
+      const notas = [
+        { inicio: 0.00, dur: 0.45, freq: 784.0 },
+        { inicio: 0.42, dur: 0.80, freq: 659.25 },
+        { inicio: 1.30, dur: 0.45, freq: 784.0 },
+        { inicio: 1.72, dur: 0.85, freq: 659.25 }
+      ];
+
+      for (let i = 0; i < numSamples; i++) {
+        const t = i / sampleRate;
+        let sample = 0;
+        for (const n of notas) {
+          if (t >= n.inicio && t < n.inicio + n.dur) {
+            const dt = t - n.inicio;
+            const env = Math.exp(-dt * 3.5);
+            // Fundamental + harmônicos para som encorpado e alto de campainha
+            sample += env * (
+              0.65 * Math.sin(2 * Math.PI * n.freq * dt) +
+              0.25 * Math.sin(2 * Math.PI * (n.freq * 2) * dt) +
+              0.10 * Math.sin(2 * Math.PI * (n.freq * 3) * dt)
+            );
+          }
+        }
+        sample = Math.max(-1, Math.min(1, sample));
+        view.setInt16(44 + i * 2, Math.floor(sample * 32000), true);
+      }
+
+      let binary = "";
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.byteLength; i += chunkSize) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+      }
+      return "data:audio/wav;base64," + btoa(binary);
+    }
 
     // 1. Registra o Service Worker para funcionar como App Nativo (PWA)
     if ("serviceWorker" in navigator) {
@@ -455,20 +517,15 @@
       document.getElementById("btnVigia").textContent = "🔊 Ativo";
     }
 
-    // 5. Som Forte de Campainha ("Ding-Dong!")
+    // 5. Som Forte de Campainha ("Ding-Dong!") usando Canal de Mídia (fura o modo Silencioso de notificações!)
     function tocarSomCampainha() {
       try {
-        if (!audioCtx) {
-          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (!campainhaMediaAudio) {
+          campainhaMediaAudio = new Audio(gerarWavCampainhaForteDataUri());
+          campainhaMediaAudio.volume = 1.0;
         }
-        if (audioCtx.state === "suspended") {
-          audioCtx.resume();
-        }
-        const agora = audioCtx.currentTime;
-        tocarNota(784, agora, 0.45);
-        tocarNota(659.25, agora + 0.42, 0.85);
-        tocarNota(784, agora + 1.4, 0.45);
-        tocarNota(659.25, agora + 1.82, 0.95);
+        campainhaMediaAudio.currentTime = 0;
+        campainhaMediaAudio.play().catch(() => {});
 
         if (navigator.vibrate) {
           navigator.vibrate([500, 150, 500, 150, 700]);
